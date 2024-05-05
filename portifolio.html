@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firebase PDF Upload</title>
+
+<!-- Include PDF.js library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+</head>
+<body>
+<div class="pdfUpload">
+    <input type="file" class="inp" onchange="getPDFData(event)" multiple accept=".pdf">
+    <button onclick="selectPDF()" class="selectPDF">Select PDF</button>
+    <div class="metaData"></div>
+    <div class="progressBar">
+        <div class="progress"></div>
+    </div>
+    <button onclick="uploadPDF()" class="upload">Upload</button>
+    <span class="completeMsg"></span>
+    <span class="loading" style="display: none;">Loading...</span>
+    <div class="searchBar">
+        <input type="text" class="searchInput" onkeyup="searchPDFs()" placeholder="Search PDFs...">
+    </div>
+    <div class="pdfs"></div>
+</div>
+
+<script>
+// Initialize PDF.js
+const pdfjsLib = window['pdfjs-dist/build/pdf'];
+
+// Firebase configuration
+const firebaseConfig = {
+    apiKey: "AIzaSyDv2bv3KrzKeLi677cKh4l4-GoHRTCSPbc",
+    authDomain: "redd-f19bc.firebaseapp.com",
+    projectId: "redd-f19bc",
+    storageBucket: "redd-f19bc.appspot.com",
+    messagingSenderId: "334719010523",
+    appId: "1:334719010523:web:d6aa0036f4107ed25f2efe"
+  };
+
+const app = firebase.initializeApp(firebaseConfig);
+const storage = firebase.storage();
+
+const inp = document.querySelector(".inp");
+const progressbar = document.querySelector(".progress");
+const pdfsContainer = document.querySelector(".pdfs");
+const metaData = document.querySelector(".metaData");
+const loading = document.querySelector(".loading");
+const completeMsg = document.querySelector(".completeMsg");
+const searchInput = document.querySelector(".searchInput");
+let files;
+let uploadedPDFs = [];
+
+// Function to select PDF files
+const selectPDF = () => {
+    inp.click();
+};
+
+// Function to extract PDF content using PDF.js
+const extractPDFContent = async (pdfFile) => {
+    const typedArray = await pdfFile.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument(typedArray).promise;
+    const numPages = pdf.numPages;
+    let content = '';
+    for (let i = 1; i <= numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const textItems = textContent.items.map(item => item.str);
+        content += textItems.join('\n') + '\n';
+    }
+    return content;
+};
+
+// Function to handle file upload
+const getPDFData = (e) => {
+    files = e.target.files;
+    for (let i = 0; i < files.length; i++) {
+        uploadedPDFs.push({ name: files[i].name, url: URL.createObjectURL(files[i]) });
+        let pdfData = document.createElement("span");
+        pdfData.className = "filedata";
+        pdfData.style.display = "block";
+        pdfData.innerHTML = files[i].name;
+        metaData.appendChild(pdfData);
+    }
+};
+
+// Function to upload PDF files to Firebase Storage
+const uploadPDF = async () => {
+    try {
+        for (let i = 0; i < files.length; i++) {
+            let url = await uploadProcess(files[i], Math.round(Math.random() * 9999) + files[i].name);
+            if (url) {
+                loading.style.display = "none";
+                let link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("target", "_blank");
+                link.innerHTML = files[i].name;
+                pdfsContainer.appendChild(link);
+            }
+            if (i === files.length - 1) {
+                completeMsg.innerHTML = `${files.length} PDFs uploaded successfully`;
+            }
+        }
+    } catch (error) {
+        console.error('Error uploading PDF:', error);
+    }
+};
+
+// Function to upload PDF file to Firebase Storage
+const uploadProcess = async (file, fileName) => {
+    try {
+        const storageRef = storage.ref().child("mypdfs");
+        const folderRef = storageRef.child(fileName);
+        const uploadtask = folderRef.put(file);
+
+        const content = await extractPDFContent(file); // Extract PDF content
+
+        return new Promise((resolve, reject) => {
+            uploadtask.on(
+                "state_changed",
+                (snapshot) => {
+                    loading.style.display = "block";
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    progressbar.style.width = progress + "%";
+                    progressbar.innerHTML = progress + "%";
+                },
+                (error) => {
+                    reject(error);
+                },
+                async () => {
+                    try {
+                        // Get the download URL after upload is complete
+                        const downloadURL = await folderRef.getDownloadURL();
+                        console.log(content); // Log the extracted content
+                        resolve(downloadURL);
+                    } catch (error) {
+                        reject(error);
+                    }
+                }
+            );
+        });
+    } catch (error) {
+        throw error;
+    }
+};
+
+// Function to search uploaded PDFs
+const searchPDFs = () => {
+    const searchTerm = searchInput.value.toLowerCase();
+    const filteredPDFs = uploadedPDFs.filter((pdf) => pdf.name.toLowerCase().includes(searchTerm));
+    renderPDFs(filteredPDFs);
+};
+
+// Function to render uploaded PDFs
+const renderPDFs = (pdfs) => {
+    pdfsContainer.innerHTML = "";
+    pdfs.forEach((pdf) => {
+        const link = document.createElement("a");
+        link.setAttribute("href", pdf.url);
+        link.setAttribute("target", "_blank");
+        link.innerHTML = pdf.name;
+        pdfsContainer.appendChild(link);
+    });
+};
+</script>
+</body>
+</html>
